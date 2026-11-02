@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"path/filepath"
+	"strings"
 )
 
 // Goal: have a fuzy find tui or cli to find go docs
@@ -38,21 +38,21 @@ func main() {
 	}
 
 	switch args[0] {
-		case "update":
-			updateCache()
-		default:
-			fmt.Println("Unknown command:", args[0])
-			os.Exit(1)
+	case "update":
+		updateCache()
+	default:
+		fmt.Println("Unknown command:", args[0])
+		os.Exit(1)
 	}
 }
 
-func updateCache(){
+func updateCache() {
 	dir := "output"
 	// List all packages
 	out, err := exec.Command("go", "list", "all").Output()
 	if err != nil {
 		fmt.Printf("Error listing all packages: %s", err)
-		return
+		os.Exit(1)
 	}
 
 	// Split list into array using carriage return
@@ -63,17 +63,35 @@ func updateCache(){
 		if lib == "" {
 			continue
 		}
-		out, err := exec.Command("go", "doc", lib).Output()
+		out, err := exec.Command("go", "doc", "-all", lib).Output()
 		if err != nil {
 			fmt.Printf("Error getting doc: %s", err)
-			return
+			continue
 		}
 		name := strings.ReplaceAll(lib, "/", "-")
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, out, 0644); err != nil {
+		if err := os.WriteFile(path, out, 0o644); err != nil {
 			fmt.Printf("Error writing doc: %s\n", err)
 			continue
 		}
 	}
+
+	// topDocs, err := os.ReadDir(dir)
+	// if err != nil {
+	// 	fmt.Println("Error reading out directory: %s", err)
+	// 	os.Exit(1)
+	// }
+	// for _, subDoc := range topDocs {
+	// 	if subDoc.IsDir(){
+	// 		continue
+	// 	}
+	// 	fileBytes, err := os.ReadFile(filepath.Join(dir, subDoc.Name()))
+	// 	if err != nil {
+	// 		fmt.Println("Error reading sub file: %s", err)
+	// 		continue
+	// 	}
+	// 	fmt.Println(string(fileBytes))
+	// }
+
 	fmt.Println("✓ Cache Updated")
 }
