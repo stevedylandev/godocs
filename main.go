@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"path/filepath"
 )
 
 // Goal: have a fuzy find tui or cli to find go docs
@@ -29,10 +30,28 @@ import (
 //
 
 func main() {
+	args := os.Args[1:]
+
+	if len(args) < 1 {
+		fmt.Println("Usage: godocs command")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+		case "update":
+			updateCache()
+		default:
+			fmt.Println("Unknown command:", args[0])
+			os.Exit(1)
+	}
+}
+
+func updateCache(){
+	dir := "output"
 	// List all packages
 	out, err := exec.Command("go", "list", "all").Output()
 	if err != nil {
-		fmt.Printf("Error: %s", err)
+		fmt.Printf("Error listing all packages: %s", err)
 		return
 	}
 
@@ -40,16 +59,21 @@ func main() {
 	libs := strings.Split(string(out), "\n")
 	// Loop over array to save each doc to file
 	for _, lib := range libs {
-		// fmt.Printf("%v: %s\n", i, lib)
+		lib = strings.TrimSpace(lib)
+		if lib == "" {
+			continue
+		}
 		out, err := exec.Command("go", "doc", lib).Output()
 		if err != nil {
-			fmt.Printf("Error: %s", err)
+			fmt.Printf("Error getting doc: %s", err)
 			return
 		}
-		filename := fmt.Sprintf("%s.txt", lib)
-		if err := os.WriteFile(filename, out, 0644); err != nil {
-			fmt.Printf("Error: %s\n", err)
+		name := strings.ReplaceAll(lib, "/", "-")
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, out, 0644); err != nil {
+			fmt.Printf("Error writing doc: %s\n", err)
 			continue
 		}
 	}
+	fmt.Println("✓ Cache Updated")
 }
