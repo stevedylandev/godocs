@@ -15,16 +15,7 @@ import (
 // To do this we probably need to do the following
 // - List all docs for all packages
 //   - We can use `go list all` to find all top levle packages
-//   - Challenge is that there's some general info for each package,
-//     then there's methods that you have to call individually.
-//     Trying to traverse them could be tricky, but I think doable
-//     if we use `func` as the prefix.
-//   - Should actually be the following key words
-//     - func
-//     - type
-//     - const
-//     - var
-// - cat the contents of each doc
+// - cat the contents of each doc using go doc -all <package>
 // - Save contents to cache directory
 // - Use that directory for searching, e.g. ripgrep for a word or phrase
 //
@@ -47,7 +38,17 @@ func main() {
 }
 
 func updateCache() {
-	dir := "output"
+	// Find home directory and make cache
+	cacheBase, err := os.UserCacheDir()
+	if err != nil {
+		fmt.Printf("Error finding cache directory: %s\n", err)
+		os.Exit(1)
+	}
+	dir := filepath.Join(cacheBase, "godoc")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Printf("Error creating cache directory: %s\n", err)
+		os.Exit(1)
+	}
 	// List all packages
 	out, err := exec.Command("go", "list", "all").Output()
 	if err != nil {
@@ -75,23 +76,5 @@ func updateCache() {
 			continue
 		}
 	}
-
-	// topDocs, err := os.ReadDir(dir)
-	// if err != nil {
-	// 	fmt.Println("Error reading out directory: %s", err)
-	// 	os.Exit(1)
-	// }
-	// for _, subDoc := range topDocs {
-	// 	if subDoc.IsDir(){
-	// 		continue
-	// 	}
-	// 	fileBytes, err := os.ReadFile(filepath.Join(dir, subDoc.Name()))
-	// 	if err != nil {
-	// 		fmt.Println("Error reading sub file: %s", err)
-	// 		continue
-	// 	}
-	// 	fmt.Println(string(fileBytes))
-	// }
-
 	fmt.Println("✓ Cache Updated")
 }
