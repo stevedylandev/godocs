@@ -31,6 +31,8 @@ func main() {
 	switch args[0] {
 	case "update":
 		updateCache()
+	case "search":
+		search()
 	default:
 		fmt.Println("Unknown command:", args[0])
 		os.Exit(1)
@@ -77,4 +79,58 @@ func updateCache() {
 		}
 	}
 	fmt.Println("✓ Cache Updated")
+}
+
+func search() {
+	for _, bin := range []string{"fzf", "rg"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			fmt.Fprintf(os.Stderr, "%s not found in PATH\n", bin)
+			os.Exit(1)
+		}
+	}
+
+	reload := `test -n {q} && rg --line-number --no-heading --color=always --smart-case -- {q} || true`
+
+	cmd := exec.Command("fzf",
+		"--disabled", "--ansi",
+		"--delimiter", ":",
+		"--bind", "change:reload:"+reload,
+		"--preview", "bat --color=always --highlight-line {2} {1} 2>/dev/null || cat {1}",
+		"--preview-window", "right:60%,+{2}/2",
+		"--prompt", "godocs> ",
+	)
+	cacheBase, err := os.UserCacheDir()
+	if err != nil {
+		fmt.Printf("Error finding cache directory: %s\n", err)
+		os.Exit(1)
+	}
+	cmd.Dir = filepath.Join(cacheBase, "godoc")
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+
+	out, err := cmd.Output()
+	if err != nil {
+		fmt.Println("fzf error: %s\n", err)
+		os.Exit(0)
+	}
+
+	selection := strings.TrimSpace(string(out))
+
+	parts := strings.SplitN(selection, ":", 3)
+	if len(parts) < 3 {
+		fmt.Println("error with fzf output:", selection)
+		os.Exit(1)
+	}
+
+	targetFilePath := filepath.Join(cacheBase, "godoc", parts[0])
+	targetLine := parts[1]
+
+	viewer := exec.Command("less", "-j.5", "+"+targetLine+"g", targetFilePath)
+	viewer.Stdin = os.Stdin
+	viewer.Stdout = os.Stdout
+	viewer.Stderr = os.Stderr
+	if err := viewer.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "viewer error: %s\n", err)
+		os.Exit(1)
+	}
 }
