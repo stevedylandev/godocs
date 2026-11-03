@@ -66,8 +66,9 @@ func updateCache() {
 
 	allLibs := slices.Concat(libs, stdLibs)
 
-	// Loop over array to save each doc to file
-	for _, lib := range allLibs {
+	// TODO: Add a progress print 
+	for i, lib := range allLibs {
+		fmt.Printf("Processed %v of %v\r", i, len(allLibs))
 		lib = strings.TrimSpace(lib)
 		if lib == "" {
 			continue
@@ -84,7 +85,7 @@ func updateCache() {
 			continue
 		}
 	}
-	fmt.Println("✓ Cache Updated")
+	fmt.Println("\n✓ Cache Updated")
 }
 
 func search(editor string) {
