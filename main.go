@@ -7,37 +7,33 @@ import (
 	"path/filepath"
 	"strings"
 	"slices"
+	"flag"
 )
 
 // Goal: have a fuzy find tui or cli to find go docs
 // We want the ability to search the content, not just for the package name
 // So many times I want to find the package for a specific functionality
-//
-// To do this we probably need to do the following
-// - List all docs for all packages
-//   - We can use `go list all` to find all top levle packages
-// - cat the contents of each doc using go doc -all <package>
-// - Save contents to cache directory
-// - Use that directory for searching, e.g. ripgrep for a word or phrase
-//
 
 func main() {
-	args := os.Args[1:]
+    if len(os.Args) < 2 {
+        fmt.Println("Usage: godocs command")
+        os.Exit(1)
+    }
 
-	if len(args) < 1 {
-		fmt.Println("Usage: godocs command")
-		os.Exit(1)
-	}
+    editor := os.Getenv("EDITOR")
 
-	switch args[0] {
-	case "update":
-		updateCache()
-	case "search":
-		search()
-	default:
-		fmt.Println("Unknown command:", args[0])
-		os.Exit(1)
-	}
+    switch os.Args[1] {
+    case "update":
+        updateCache()
+    case "search":
+        fs := flag.NewFlagSet("search", flag.ExitOnError)
+        editorFlag := fs.String("e", editor, "Open the docs with provided editor")
+        fs.Parse(os.Args[2:])
+        search(*editorFlag)
+    default:
+        fmt.Println("Unknown command:", os.Args[1])
+        os.Exit(1)
+    }
 }
 
 func updateCache() {
@@ -91,7 +87,7 @@ func updateCache() {
 	fmt.Println("✓ Cache Updated")
 }
 
-func search() {
+func search(editor string) {
 	for _, bin := range []string{"fzf", "rg"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			fmt.Fprintf(os.Stderr, "%s not found in PATH\n", bin)
@@ -133,7 +129,6 @@ func search() {
 	targetFilePath := filepath.Join(cacheBase, "godoc", parts[0])
 	targetLine := parts[1]
 
-	editor := os.Getenv("EDITOR")
 	viewer := exec.Command(editor, targetFilePath, "+"+targetLine)
 	viewer.Stdin = os.Stdin
 	viewer.Stdout = os.Stdout
