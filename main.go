@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"slices"
 )
 
 // Goal: have a fuzy find tui or cli to find go docs
@@ -57,11 +58,20 @@ func updateCache() {
 		fmt.Printf("Error listing all packages: %s", err)
 		os.Exit(1)
 	}
-
 	// Split list into array using carriage return
 	libs := strings.Split(string(out), "\n")
+
+	stdLibsOut, err := exec.Command("go", "list", "std").Output()
+	if err != nil {
+		fmt.Printf("Error listing all packages: %s", err)
+		os.Exit(1)
+	}
+	stdLibs := strings.Split(string(stdLibsOut), "\n")
+
+	allLibs := slices.Concat(libs, stdLibs)
+
 	// Loop over array to save each doc to file
-	for _, lib := range libs {
+	for _, lib := range allLibs {
 		lib = strings.TrimSpace(lib)
 		if lib == "" {
 			continue
@@ -89,12 +99,10 @@ func search() {
 		}
 	}
 
-	reload := `test -n {q} && rg --line-number --no-heading --color=always --smart-case -- {q} || true`
-
 	cmd := exec.Command("fzf",
 		"--disabled", "--ansi",
 		"--delimiter", ":",
-		"--bind", "change:reload:"+reload,
+		"--bind", "change:reload:test -n {q} && rg --line-number --no-heading --color=always --smart-case -- {q} || true",
 		"--preview", "bat --color=always --highlight-line {2} {1} 2>/dev/null || cat {1}",
 		"--preview-window", "right:60%,+{2}/2",
 		"--prompt", "godocs> ",
