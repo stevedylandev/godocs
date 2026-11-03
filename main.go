@@ -125,7 +125,8 @@ func search() {
 	targetFilePath := filepath.Join(cacheBase, "godoc", parts[0])
 	targetLine := parts[1]
 
-	viewer := exec.Command("less", "-j.5", "+"+targetLine+"g", targetFilePath)
+	editor := os.Getenv("EDITOR")
+	viewer := exec.Command(editor, targetFilePath, "+"+targetLine)
 	viewer.Stdin = os.Stdin
 	viewer.Stdout = os.Stdout
 	viewer.Stderr = os.Stderr
