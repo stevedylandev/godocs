@@ -13,10 +13,20 @@ import (
 // Goal: have a fuzy find tui or cli to find go docs
 // We want the ability to search the content, not just for the package name
 // So many times I want to find the package for a specific functionality
+//
+// MVP: using exec.Command to run go list -all with go doc <package>,
+// then ripgrep through fzf 
+//
+// V1: use go/build, go/ast, go/doc. go/parser, go/printer to generate
+// raw doc values to build more controled and robust views. 
+// - Syntax highlighting
+// - Better indexing for search
+// - Full TUI for navigating and accessing
+// - CLI for printing to stdout
 
 func main() {
     if len(os.Args) < 2 {
-        fmt.Println("Usage: godocs command")
+        fmt.Println("Usage: gobble command")
         os.Exit(1)
     }
 
@@ -43,7 +53,7 @@ func updateCache() {
 		fmt.Printf("Error finding cache directory: %s\n", err)
 		os.Exit(1)
 	}
-	dir := filepath.Join(cacheBase, "godoc")
+	dir := filepath.Join(cacheBase, "gobble")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Printf("Error creating cache directory: %s\n", err)
 		os.Exit(1)
@@ -66,7 +76,6 @@ func updateCache() {
 
 	allLibs := slices.Concat(libs, stdLibs)
 
-	// TODO: Add a progress print 
 	for i, lib := range allLibs {
 		fmt.Printf("Processed %v of %v\r", i, len(allLibs))
 		lib = strings.TrimSpace(lib)
@@ -102,14 +111,14 @@ func search(editor string) {
 		"--bind", "change:reload:test -n {q} && rg --line-number --no-heading --color=always --smart-case -- {q} || true",
 		"--preview", "bat --color=always --highlight-line {2} {1} 2>/dev/null || cat {1}",
 		"--preview-window", "right:60%,+{2}/2",
-		"--prompt", "godocs> ",
+		"--prompt", "gobble> ",
 	)
 	cacheBase, err := os.UserCacheDir()
 	if err != nil {
 		fmt.Printf("Error finding cache directory: %s\n", err)
 		os.Exit(1)
 	}
-	cmd.Dir = filepath.Join(cacheBase, "godoc")
+	cmd.Dir = filepath.Join(cacheBase, "gobble")
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
@@ -127,7 +136,7 @@ func search(editor string) {
 		os.Exit(1)
 	}
 
-	targetFilePath := filepath.Join(cacheBase, "godoc", parts[0])
+	targetFilePath := filepath.Join(cacheBase, "gobble", parts[0])
 	targetLine := parts[1]
 
 	viewer := exec.Command(editor, targetFilePath, "+"+targetLine)
