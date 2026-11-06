@@ -1,150 +1,137 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"slices"
-	"flag"
 )
 
-// Goal: have a fuzy find tui or cli to find go docs
-// We want the ability to search the content, not just for the package name
-// So many times I want to find the package for a specific functionality
-//
-// MVP: using exec.Command to run go list -all with go doc <package>,
-// then ripgrep through fzf 
-//
-// V1: use go/build, go/ast, go/doc. go/parser, go/printer to generate
-// raw doc values to build more controled and robust views. 
-// - Syntax highlighting
-// - Better indexing for search
-// - Full TUI for navigating and accessing
-// - CLI for printing to stdout
+type SearchResp struct {
+	Items []SearchItem `json:"items"`
+	Total int          `json:"total"`
+}
+
+type SearchItem struct {
+	PackagePath string `json:"packagePath"`
+	ModulePath  string `json:"modulePath"`
+	Version     string `json:"version"`
+	Synopsis    string `json:"synopsis"`
+}
+
+type Package struct {
+	ModulePath        string   `json:"modulePath"`
+	Version           string   `json:"version"`
+	IsLatest          bool     `json:"isLatest"`
+	IsStandardLibrary bool     `json:"isStandardLibrary"`
+	GOOS              string   `json:"goos"`
+	GOARCH            string   `json:"goarch"`
+	Docs              string   `json:"docs,omitempty"`
+	Imports           []string `json:"imports,omitempty"`
+	PackageInfo
+}
+
+type PackageInfo struct {
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Synopsis string `json:"synopsis"`
+	// IsRedistributable is whether the license allows distribution.
+	IsRedistributable bool `json:"isRedistributable"`
+}
 
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: gobble command")
-        os.Exit(1)
-    }
+	args := os.Args[1:]
 
-    editor := os.Getenv("EDITOR")
+	if len(args) < 1 {
+		fmt.Println("Usage: godocs command")
+		os.Exit(1)
+	}
 
-    switch os.Args[1] {
-    case "update":
-        updateCache()
-    case "search":
-        fs := flag.NewFlagSet("search", flag.ExitOnError)
-        editorFlag := fs.String("e", editor, "Open the docs with provided editor")
-        fs.Parse(os.Args[2:])
-        search(*editorFlag)
-    default:
-        fmt.Println("Unknown command:", os.Args[1])
-        os.Exit(1)
-    }
+	switch args[0] {
+	case "search":
+		search(args[1])
+	case "define":
+		define(args[1])
+	case "symbols":
+		symbol(args[1])
+	default:
+		fmt.Println("Unknown command:", args[0])
+		os.Exit(1)
+	}
 }
 
-func updateCache() {
-	// Find home directory and make cache
-	cacheBase, err := os.UserCacheDir()
+func search(query string) {
+	url := fmt.Sprintf("http://localhost:5678/v1/search?q=%s&limit=100", query)
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Error finding cache directory: %s\n", err)
+		fmt.Printf("Error making request: %s", err)
 		os.Exit(1)
 	}
-	dir := filepath.Join(cacheBase, "gobble")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Printf("Error creating cache directory: %s\n", err)
-		os.Exit(1)
-	}
-	// List all packages
-	out, err := exec.Command("go", "list", "all").Output()
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("Error listing all packages: %s", err)
+		fmt.Printf("Error parsing body: %s", err)
 		os.Exit(1)
 	}
-	// Split list into array using carriage return
-	libs := strings.Split(string(out), "\n")
 
-	stdLibsOut, err := exec.Command("go", "list", "std").Output()
-	if err != nil {
-		fmt.Printf("Error listing all packages: %s", err)
+	var docsData SearchResp
+	if err := json.Unmarshal(body, &docsData); err != nil {
+		fmt.Printf("Error unmarshalling json: %s", err)
 		os.Exit(1)
 	}
-	stdLibs := strings.Split(string(stdLibsOut), "\n")
 
-	allLibs := slices.Concat(libs, stdLibs)
-
-	for i, lib := range allLibs {
-		fmt.Printf("Processed %v of %v\r", i, len(allLibs))
-		lib = strings.TrimSpace(lib)
-		if lib == "" {
-			continue
-		}
-		out, err := exec.Command("go", "doc", "-all", lib).Output()
-		if err != nil {
-			fmt.Printf("Error getting doc: %s", err)
-			continue
-		}
-		name := strings.ReplaceAll(lib, "/", "-")
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, out, 0o644); err != nil {
-			fmt.Printf("Error writing doc: %s\n", err)
-			continue
-		}
+	for _, doc := range docsData.Items {
+		fmt.Println(doc.PackagePath)
 	}
-	fmt.Println("\n✓ Cache Updated")
 }
 
-func search(editor string) {
-	for _, bin := range []string{"fzf", "rg"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			fmt.Fprintf(os.Stderr, "%s not found in PATH\n", bin)
-			os.Exit(1)
-		}
-	}
-
-	cmd := exec.Command("fzf",
-		"--disabled", "--ansi",
-		"--delimiter", ":",
-		"--bind", "change:reload:test -n {q} && rg --line-number --no-heading --color=always --smart-case -- {q} || true",
-		"--preview", "bat --color=always --highlight-line {2} {1} 2>/dev/null || cat {1}",
-		"--preview-window", "right:60%,+{2}/2",
-		"--prompt", "gobble> ",
-	)
-	cacheBase, err := os.UserCacheDir()
+func define(packagePath string) {
+	url := fmt.Sprintf("http://localhost:5678/v1beta/package/%s?doc=md&examples=true", packagePath)
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Error finding cache directory: %s\n", err)
+		fmt.Printf("Error making request: %s", err)
 		os.Exit(1)
 	}
-	cmd.Dir = filepath.Join(cacheBase, "gobble")
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
 
-	out, err := cmd.Output()
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("fzf error: %s\n", err)
-		os.Exit(0)
-	}
-
-	selection := strings.TrimSpace(string(out))
-
-	parts := strings.SplitN(selection, ":", 3)
-	if len(parts) < 3 {
-		fmt.Println("error with fzf output:", selection)
+		fmt.Printf("Error parsing body: %s", err)
 		os.Exit(1)
 	}
 
-	targetFilePath := filepath.Join(cacheBase, "gobble", parts[0])
-	targetLine := parts[1]
+	fmt.Println(string(body))
 
-	viewer := exec.Command(editor, targetFilePath, "+"+targetLine)
-	viewer.Stdin = os.Stdin
-	viewer.Stdout = os.Stdout
-	viewer.Stderr = os.Stderr
-	if err := viewer.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "viewer error: %s\n", err)
+	// var packageData Package
+	// if err := json.Unmarshal(body, &packageData); err != nil {
+	// 	fmt.Printf("Error unmarshalling json: %s", err)
+	// 	os.Exit(1)
+	// }
+	//
+	// fmt.Println(packageData)
+}
+
+func symbol(packagePath string) {
+	url := fmt.Sprintf("http://localhost:5678/v1beta/symbols/%s", packagePath)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("Error making request: %s", err)
 		os.Exit(1)
 	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error parsing body: %s", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(string(body))
+
+	// var packageData Package
+	// if err := json.Unmarshal(body, &packageData); err != nil {
+	// 	fmt.Printf("Error unmarshalling json: %s", err)
+	// 	os.Exit(1)
+	// }
+	//
+	// fmt.Println(packageData)
 }
